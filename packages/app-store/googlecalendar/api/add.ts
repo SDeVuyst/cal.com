@@ -14,39 +14,50 @@ import { SCOPES } from "../lib/constants";
 import { getGoogleAppKeys } from "../lib/getGoogleAppKeys";
 
 async function getHandler(req: NextApiRequest, res: NextApiResponse) {
-  if (!req.session?.user) {
+  const loggedInUser = req.session?.user;
+  if (!loggedInUser) {
     throw new HttpError({ statusCode: 401, message: "You must be logged in to do this" });
   }
 
-  const loggedInUser = req.session.user;
-  const domainWideDelegation = await DomainWideDelegationRepository.findByOrganizationMemberEmail({
+  // Ideally this should never happen, as email is there in session user but typings aren't accurate it seems
+  // TODO: So, confirm and later fix the typings
+  if (!loggedInUser.email) {
+    throw new HttpError({ statusCode: 400, message: "Session user must have an email" });
+  }
+
+  const domainWideDelegation = await DomainWideDelegationRepository.findUniqueByOrganizationMemberEmail({
     email: loggedInUser.email,
-    workspacePlatform: "GOOGLE",
   });
 
   if (domainWideDelegation && domainWideDelegation.enabled) {
-    logger.debug("Domain-wide delegation is enabled");
-    // FIXME: How about if the app is installed for a team? Is that possible? I think not.
-    // We should figure it out and add appropriate comment here.
-    if (await isAppInstalled({ appId: metadata.slug, userId: loggedInUser.id })) {
-      throw new HttpError({
-        statusCode: 422,
-        message: "Domain-wide delegation restricts adding more than one installation",
+    if (domainWideDelegation.workspacePlatform.slug !== "google") {
+      logger.debug("Domain-wide delegation isn't compatible with this app", {
+        domainWideDelegation: domainWideDelegation.workspacePlatform.slug,
       });
-    }
+    } else {
+      logger.debug("Domain-wide delegation is enabled");
+      // FIXME: How about if the app is installed for a team? Is that possible? I think not.
+      // We should figure it out and add appropriate comment here.
+      if (await isAppInstalled({ appId: metadata.slug, userId: loggedInUser.id })) {
+        throw new HttpError({
+          statusCode: 422,
+          message: "Domain-wide delegation restricts adding more than one installation",
+        });
+      }
 
-    await createDefaultInstallation({
-      appType: metadata.type,
-      user: loggedInUser,
-      slug: metadata.slug,
-      delegatedToId: domainWideDelegation.id,
-      key: {
-        // FIXME: zod validation somewhere requires access_token, when infact it isn't needed for domain-wide delegation
-        access_token: "NOT_A_TOKEN",
-      },
-    });
-    res.status(200).json({ message: "App successfully installed and is using delegated credentials" });
-    return;
+      await createDefaultInstallation({
+        appType: metadata.type,
+        user: loggedInUser,
+        slug: metadata.slug,
+        delegatedToId: domainWideDelegation.id,
+        key: {
+          // FIXME: zod validation somewhere requires access_token, when infact it isn't needed for domain-wide delegation
+          access_token: "NOT_A_TOKEN",
+        },
+      });
+      res.status(200).json({ message: "App successfully installed and is using delegated credentials" });
+      return;
+    }
   }
 
   const { client_id, client_secret } = await getGoogleAppKeys();

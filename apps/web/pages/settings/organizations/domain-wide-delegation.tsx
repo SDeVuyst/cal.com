@@ -1,4 +1,4 @@
-import DomainWideDelegationList from "@calcom/features/ee/organizations/pages/settings/domainWideDelegation/domainWideDelegationList";
+import DomainWideDelegationList from "@calcom/features/ee/organizations/pages/settings/domainWideDelegation";
 import { getLayout } from "@calcom/features/settings/layouts/SettingsLayout";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { Meta } from "@calcom/ui";
